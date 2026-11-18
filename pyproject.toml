@@ -1,0 +1,13 @@
+[project]
+name = "streaming-guard"
+version = "0.1.0"
+description = "Redact AHV numbers and email addresses from a chunked text stream"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
