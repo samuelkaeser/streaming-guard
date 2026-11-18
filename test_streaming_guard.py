@@ -17,7 +17,23 @@ CORPUS = [
     "x.y+tag@sub.domain.example.org\nnext line 756.9999.0000.11\n",
     "no sensitive data here at all",
     "@@@ ... +++ --- %%% 756. 756.1234 756.1234.5678",
+    "line one a@b.ch\r\nline two 756.1234.5678.97\r\n",
+    "tab\tseparated\ta@b.ch\t756.1234.5678.97\t",
+    "caf\u00e9 e\u0301@exampl\u0065\u0301.ch and x\u0301y@z.ch",
+    "\u0667\u0665\u0666.\u0661\u0662\u0663\u0664.\u0665\u0666\u0667\u0668.\u0669\u0667",
+    "a@b.ch.c@d.ch a@b.ch-c@d.ch a@b.ch@c.ch a@b.ch+x@y@c.ch",
     "",
+]
+
+
+LINEAR_TEXTS = [
+    "a" * 200_000,
+    "a@" * 100_000,
+    "a@b." * 50_000,
+    "756." * 50_000,
+    ("7" * 20 + " ") * 10_000,
+    "a@b.c" * 40_000,
+    "a@b@" * 50_000,
 ]
 
 
@@ -63,6 +79,14 @@ def test_chunk_independence(text):
     "text, expected",
     [
         ("a@b.ch+c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch.c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch-c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch_c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch@c.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch%c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch..c@d.ch", "[REDACTED_EMAIL]"),
+        ("a@b.ch+x@y@c.ch", "[REDACTED_EMAIL]+x@[REDACTED_EMAIL]"),
+        ("a@b.ch@", "[REDACTED_EMAIL]@"),
         ("a@b..ch", "a@b..ch"),
         ("a@b", "a@b"),
         ("a@b@c.ch", "a@[REDACTED_EMAIL]"),
@@ -74,6 +98,7 @@ def test_chunk_independence(text):
         ("755.1234.5678.97", "755.1234.5678.97"),
         ("756.1234.5678.9", "756.1234.5678.9"),
         ("1756.1234.5678.97", "1[REDACTED_AHV]"),
+        ("\u0667\u0665\u0666.\u0661\u0662\u0663\u0664.\u0665\u0666\u0667\u0668.\u0669\u0667",) * 2,
         ("", ""),
     ],
 )
@@ -116,18 +141,24 @@ def test_delimiter_forwarded_immediately():
     assert g.finish() == ""
 
 
-def test_held_back_never_exceeds_current_token():
-    text = "The quick brown fox jumps over the lazy dog, again and again."
-    g = StreamingGuard()
-    fed = out = 0
-    token = 0
-    for ch in text:
-        fed += 1
-        out += len(g.push(ch))
-        token = token + 1 if re.match(r"[\w.%+@-]", ch) else 0
-        assert fed - out == token
-    out += len(g.finish())
-    assert fed == out
+def last_delimiter_end(text):
+    for i in range(len(text) - 1, -1, -1):
+        if not re.fullmatch(r"[\w.%+\-@]", text[i]):
+            return i + 1
+    return 0
+
+
+@pytest.mark.parametrize("text", CORPUS)
+def test_only_unfinished_token_is_held(text):
+    for seed in [None] + list(range(10)):
+        chunks = list(text) if seed is None else random_chunks(text, random.Random(seed))
+        g = StreamingGuard()
+        out, fed = "", ""
+        for c in chunks:
+            out += g.push(c)
+            fed += c
+            assert out == redact(fed[: last_delimiter_end(fed)])
+        assert out + g.finish() == redact(text)
 
 
 def test_budget_exact_cut():
@@ -178,10 +209,41 @@ def test_budget_zero():
     assert run([""], max_output_chars=0) == ""
 
 
-@pytest.mark.parametrize(
-    "text",
-    ["a" * 200_000, "a@" * 100_000, "a@b." * 50_000],
-)
+def test_markers_never_leak():
+    items = [
+        "geheim1@privat1.ch",
+        "geheim2@privat2.ch",
+        "geheim3.x+y@sub.privat3.org",
+        "756.3141.5926.53",
+        "756.2718.2818.28",
+    ]
+    markers = ["geheim1", "privat1", "geheim2", "privat2", "geheim3", "privat3",
+               "3141", "5926", "2718", "2818"]
+    joiner_chars = list(".-_+%@ ,ab19")
+    rng = random.Random(99)
+    for _ in range(1500):
+        parts = []
+        for item in rng.sample(items, rng.randint(1, len(items))):
+            parts.append(item)
+            parts.append("".join(rng.choice(joiner_chars) for _ in range(rng.randint(0, 3))))
+        text = "".join(parts)
+        out = run(random_chunks(text, rng))
+        for m in markers:
+            if m in text:
+                assert m not in out, (text, out)
+
+
+def test_budget_fuzz():
+    rng = random.Random(7)
+    for _ in range(400):
+        text = rng.choice(CORPUS)
+        full = redact(text)
+        n = rng.choice([0, 1, 2, 5, len(full) // 2, len(full), len(full) + 1])
+        expected = full[:n] + "[TRUNCATED]" if len(full) > n else full
+        assert run(random_chunks(text, rng), max_output_chars=n) == expected
+
+
+@pytest.mark.parametrize("text", LINEAR_TEXTS)
 def test_linear_whole_text(text):
     start = time.perf_counter()
     redact(text)
@@ -189,7 +251,7 @@ def test_linear_whole_text(text):
     assert time.perf_counter() - start < 2
 
 
-@pytest.mark.parametrize("text", ["a" * 200_000, "a@" * 100_000, "a@b." * 50_000])
+@pytest.mark.parametrize("text", LINEAR_TEXTS)
 def test_linear_char_by_char(text):
     start = time.perf_counter()
     run(text)

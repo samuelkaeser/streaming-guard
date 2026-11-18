@@ -7,10 +7,11 @@ _LOCAL_CHARS = r"\w.%+"
 _LOCAL = f"[{_LOCAL_CHARS}-]"
 _TOKEN_CHARS = _LOCAL_CHARS + "@-"
 
-# Possessive quantifiers plus the lookbehind keep matching linear. The outer
-# group makes glued addresses (a@b.ch+c@d.ch) a single match.
+# One local part followed by one or more @domain parts, repeated, so addresses
+# glued together (a@b.ch+c@d.ch, a@b.ch.c@d.ch) end up as a single match.
+# Possessive quantifiers plus the lookbehind keep matching linear.
 _PATTERN = re.compile(
-    rf"(?P<email>(?<!{_LOCAL})(?:{_LOCAL}++@[\w-]++(?:\.[\w-]++)++)++)"
+    rf"(?P<email>(?<!{_LOCAL})(?:{_LOCAL}++(?:@[\w-]++(?:\.[\w-]++)++)++)++)"
     r"|(?P<ahv>756\.[0-9]{4}\.[0-9]{4}\.[0-9]{2})"
 )
 # Group 1: everything up to and including the last delimiter. Group 2: the tail.
