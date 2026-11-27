@@ -102,3 +102,7 @@ What it needs around it:
 - **Budget.** `max_output_chars` is a cheap backstop against runaway generations, but the real limit belongs on the provider call (`max_tokens`), since truncating in the gateway still pays for the tokens.
 
 And what it won't do: it only catches identifiers with a fixed format. For names and free-text personal data it has to be paired with an NER or classifier pass, which costs latency and usually can't run per token. A sensible split is regex guards inline on the stream, and the heavier model asynchronously on the finished response for audit and alerting.
+
+## AI tools
+
+I used Claude Code (the native CLI in the terminal). I talked the design through with it, had it write the code and tests with me, and let a second agent review the result and try to break it. The decisions are mine, and I've read every line.
