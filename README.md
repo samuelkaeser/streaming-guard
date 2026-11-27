@@ -102,7 +102,3 @@ What it needs around it:
 - **Budget.** `max_output_chars` is a cheap backstop against runaway generations, but the real limit belongs on the provider call (`max_tokens`), since truncating in the gateway still pays for the tokens.
 
 And what it won't do: it only catches identifiers with a fixed format. For names and free-text personal data it has to be paired with an NER or classifier pass, which costs latency and usually can't run per token. A sensible split is regex guards inline on the stream, and the heavier model asynchronously on the finished response for audit and alerting.
-
-## AI tools
-
-I built this with Claude Code. I used it to talk through the design (token hold-back versus a per-pattern state machine), to check what existing guardrail products do on streams, and to write the code and the tests. A separate review agent then tried to break it with its own fuzzer and probes, which is how the second glued-address leak was found. The decisions are mine: the pattern definitions, preferring the short solution over the exact-minimal one, and what goes under limits instead of into the code. I've read every line and can explain and change any of it.
